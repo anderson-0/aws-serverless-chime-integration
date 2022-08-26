@@ -1,0 +1,114 @@
+Conditions:
+  # CHIME_ENABLED environment variable should be created
+  ChimeMeetingEnabled: !Equals ["${env:CHIME_ENABLED}", "true"]
+
+Resources:
+  ChimeMeetingsTable:
+    Condition: ChimeMeetingEnabled
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: chime-meetings-${env:STAGE}
+      AttributeDefinitions:
+        - AttributeName: Title
+          AttributeType: S
+        - AttributeName: Passcode
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: Title
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: Passcode
+          KeySchema:
+            - AttributeName: Passcode
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: TTL
+        Enabled: true
+  ChimeKMSKey:
+    Condition: ChimeMeetingEnabled
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Custom KMS Key with Chime access
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: Allow access for Chime Service
+            Effect: Allow
+            Principal:
+              Service: "chime.amazonaws.com"
+            Action:
+              - kms:GenerateDataKey
+              - kms:Decrypt
+            Resource: "*"
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS:
+                Fn::Sub: arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+  ChimeKMSAlias:
+    Condition: ChimeMeetingEnabled
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/ChimeKMS
+      TargetKeyId:
+        Ref: ChimeKMSKey
+    Metadata:
+      SamResourceId: ChimeKMSAlias
+  ChimeMeetingNotificationsQueue:
+    Condition: ChimeMeetingEnabled
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: chime-meetings-notifications-queue-${env:STAGE}
+      KmsMasterKeyId: alias/ChimeKMS
+  ChimeNotificationsQueuePolicy:
+    Condition: ChimeMeetingEnabled
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - sqs:SendMessage
+              - sqs:GetQueueUrl
+            Principal:
+              Service: "chime.amazonaws.com"
+            Resource:
+              Fn::GetAtt:
+                - ChimeMeetingNotificationsQueue
+                - Arn
+      Queues:
+        - Ref: ChimeMeetingNotificationsQueue
+  ChimeBrowserLogs:
+    Condition: ChimeMeetingEnabled
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: chime-meetings-browser-logs-${env:STAGE}
+      RetentionInDays: 30
+  ChimeBrowserMeetingEventLogs:
+    Condition: ChimeMeetingEnabled
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: chime-meetings-browser-meetings-logs-${env:STAGE}
+      RetentionInDays: 30
+  ChimeBrowserEventIngestionLogs:
+    Condition: ChimeMeetingEnabled
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: chime-meetings-browser-event-ingestion-logs-${env:STAGE}
+      RetentionInDays: 30

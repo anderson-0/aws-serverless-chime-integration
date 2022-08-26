@@ -1,0 +1,144 @@
+service: aws-serverless-chime-integration # NOTE: update this with your service name
+frameworkVersion: "3"
+
+useDotenv: true
+
+plugins:
+  - serverless-esbuild
+  - serverless-offline
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  region: us-east-1
+  # profile: tfl-enlyt-health
+  environment:
+    SQS_QUEUE_ARN: arn:aws:sqs:us-east-1:$${aws:accountId}:chime-meetings-notifications-queue-${env:STAGE}
+    STAGE: stage
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - chime:CreateMeeting
+        - chime:TagMeeting
+        - chime:TagResource
+        - chime:DeleteMeeting
+        - chime:GetMeeting
+        - chime:ListMeetings
+        - chime:BatchCreateAttendee
+        - chime:CreateAttendee
+        - chime:DeleteAttendee
+        - chime:GetAttendee
+        - chime:ListAttendees
+        - chime:StartMeetingTranscription
+        - chime:StopMeetingTranscription
+        - chime:CreateMediaCapturePipeline
+        - chime:DeleteMediaCapturePipeline
+        - s3:GetBucketPolicy
+        - s3:GetBucketLocation
+        - chime:Connect
+        - chime:GetMessagingSessionEndpoint
+        - logs:CreateLogStream
+        - logs:PutLogEvents
+        - logs:DescribeLogStreams
+        - kms:*
+        - sqs:SendMessage
+        - sqs:GetQueueUrl
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+      Resource: "*"
+
+functions:
+  checkSqs:
+    handler: src/handler.checkSqs
+    events:
+      - http:
+          path: /check_sqs
+          method: get
+          cors: true
+  index:
+    handler: src/handler.index
+    events:
+      - http:
+          path: /
+          method: get
+          cors: true
+    package:
+      include:
+        - src/index.html
+  join:
+    handler: src/handler.join
+    events:
+      - http:
+          path: /join
+          method: post
+          cors: true
+  deleteAttendee:
+    handler: src/handler.deleteAttendee
+    events:
+      - http:
+          path: /deleteAttendee
+          method: post
+          cors: true
+  end:
+    handler: src/handler.end
+    events:
+      - http:
+          path: /end
+          method: post
+          cors: true
+  sqs:
+    handler: src/handler.sqs
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: ["ChimeMeetingNotificationsQueue", "Arn"]
+
+  eventBridge:
+    handler: src/handler.eventBridge
+    events:
+      - eventBridge:
+          eventBus: default
+          pattern:
+            source:
+              - "aws.chime"
+            detail-type:
+              - "Chime Meeting State Change"
+  logs:
+    handler: src/handler.logs
+    events:
+      - http:
+          path: /logs
+          method: post
+          cors: true
+  logMeetingEvent:
+    handler: src/handler.logMeetingEvent
+    events:
+      - http:
+          path: /log_meeting_event
+          method: post
+          cors: true
+  logEventIngestion:
+    handler: src/handler.logEventDigestion
+    events:
+      - http:
+          path: /log_event_ingestion
+          method: post
+          cors: true
+  createBrowserLogStream:
+    handler: src/handler.createBrowserLogStream
+    events:
+      - http:
+          path: /create_log_stream
+          method: post
+          cors: true
+  createBrowserEventLogStream:
+    handler: src/handler.createBrowserEventLogStream
+    events:
+      - http:
+          path: /create_event_log_stream
+          method: post
+          cors: true
+
+resources:
+  - ${file(src/resources/chime.yaml)}
